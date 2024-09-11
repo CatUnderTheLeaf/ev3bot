@@ -1,0 +1,15 @@
+# motor ports
+left_motor: 'outA'
+right_motor: 'outD'
+# size of the stud
+stud_mm: 8
+# number of studs
+stud_num: 15
+
+# mqtt
+broker_ip: '10.42.1.2'
+port: 1883
+keep_alive: 60
+
+# mqtt topics
+cmd_vel: 'pingpong/primitive'
