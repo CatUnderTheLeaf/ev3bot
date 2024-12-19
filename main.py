@@ -9,6 +9,7 @@ import logging
 import yaml
 
 from legobot import LegoBot
+from agt import AlexaGadget
 
 import paho.mqtt.client as mqtt
 
@@ -18,6 +19,52 @@ logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='%(message)s')
 logging.getLogger().addHandler(logging.StreamHandler(sys.stderr))
 logger = logging.getLogger(__name__)
 
+# class AlexaBot(AlexaGadget):
+#     def __init__(self):
+#         super().__init__()
+    
+#     def on_connected(self, device_addr):
+#         """
+#         Gadget connected to the paired Echo device.
+#         :param friendly_name: the friendly name of the gadget that has connected to the Echo device
+#         """
+#         self.leds.set_color("LEFT", "GREEN")
+#         self.leds.set_color("RIGHT", "GREEN")
+#         print("connected to Echo device")
+
+#     def on_disconnected(self, device_addr):
+#         """
+#         Gadget disconnected from the paired Echo device.
+#         :param friendly_name: the friendly name of the gadget that has disconnected from the Echo device
+#         """
+#         self.leds.set_color("LEFT", "BLACK")
+#         self.leds.set_color("RIGHT", "BLACK")
+#         print("disconnected from Echo device")
+
+#     def on_alexa_gadget_statelistener_stateupdate(self, directive):
+#         """
+#         Listens for the wakeword state change and react by turning on the LED.
+#         :param directive: contains a payload with the updated state information from Alexa
+#         """
+#         color_list = ['BLACK', 'AMBER', 'YELLOW', 'GREEN']
+#         for state in directive.payload.states:
+#             if state.name == 'wakeword':
+
+#                 if state.value == 'active':
+#                     print("Wake word active", file=sys.stderr)
+#                     self.sound.play_song((('A3', 'e'), ('C5', 'e')))
+#                     for i in range(0, 4, 1):
+#                         self.leds.set_color("LEFT", color_list[i], (i * 0.25))
+#                         self.leds.set_color("RIGHT", color_list[i], (i * 0.25))
+#                         # time.sleep(0.25)
+#                     # self.bot.move(0.25)
+#                 elif state.value == 'cleared':
+#                     print("Wake word cleared", file=sys.stderr)
+#                     self.sound.play_song((('C5', 'e'), ('A3', 'e')))
+#                     for i in range(3, -1, -1):
+#                         self.leds.set_color("LEFT", color_list[i], (i * 0.25))
+#                         self.leds.set_color("RIGHT", color_list[i], (i * 0.25))
+                        # time.sleep(0.25)
 
 if __name__ == '__main__':
      
@@ -41,7 +88,6 @@ if __name__ == '__main__':
    
     # create a robot instance
     bot = LegoBot(config['left_motor'], config['right_motor'], DIST_BTW_WHEELS)
-
 
     # MQTT subscriber functions
     def on_connect(client, userdata, flags, rc):
@@ -67,18 +113,47 @@ if __name__ == '__main__':
             userdata - the private user data
             message (MQTTMessage) - the received message
         """
-        if msg.payload.decode() == 'q':
+        
+        # lets set test speed value and rotation degrees:
+        speed = 75
+        degrees = 90
+        seconds = 5
+        # Task numbers:
+        # 0 - stop the robot
+        # 1 - move forwards
+        # 2 - move backwards
+        # 3 - turn left degrees
+        # 4 - turn right degrees
+        # q - quit the robot
+        # speak - greetings phrase
+
+        action = msg.payload.decode()
+        print(action)
+
+        # there is no `match...case` in Python 3.5 :(
+        if action == '0':
+            print('stopping')
+            bot.stop()
+        elif action == '1':
+            print('moving forwards')
+            bot.steer_on_for_seconds(0, int(speed), seconds)
+        elif action == '2':
+            print('moving backwards')
+            bot.steer_on_for_seconds(0, int(speed)*-1, seconds)
+        elif action == '3':
+            print('turning left')
+            bot.turn_degrees(int(speed), degrees*-1)
+        elif action == '4':
+            print('turning right')
+            bot.turn_degrees(int(speed), degrees)
+        elif action == 'q':
             client.disconnect()
             print('turning off')
             bot.turn_off()
+        elif action == 'speak':
+            bot.sound.speak('greetings from EV3')
         else:
-            speed, steer = msg.payload.decode().split(' ')
-            if steer == '0' and speed == '0':
-                print('stopping')
-                bot.stop()
-            else:
-                print(msg.payload.decode())
-                bot.move(int(steer), int(speed))
+            print('command not found')
 
     # create and run MQTT client to receive messages
     client = mqtt.Client()
