@@ -101,57 +101,35 @@ if __name__ == '__main__':
             reason_code (ReasonCode) - the connection reason code received from the broken
         """
         print("Connected with result code "+str(rc))
-        client.subscribe(config['cmd_vel'])
+        client.subscribe(config['legobot_cmd'])
 
     def on_message(client, userdata, msg):
         """
-        recieve `cmd_vel` message and 
+        recieve `legobot_cmd` message and 
         move the robot accordingly
 
         Args:
             client (Client) - the client instance for this callback
             userdata - the private user data
-            message (MQTTMessage) - the received message
+            msg (MQTTMessage) - the received message
         """
         
-        # lets set test speed value and rotation degrees:
-        speed = 75
-        degrees = 90
-        seconds = 5
-        # Task numbers:
-        # 0 - stop the robot
-        # 1 - move forwards
-        # 2 - move backwards
-        # 3 - turn left degrees
-        # 4 - turn right degrees
-        # q - quit the robot
-        # speak - greetings phrase
-
-        action = msg.payload.decode()
-        print(action)
+        message = msg.payload.decode()
+        command = yaml.safe_load(message)
+        print(command['cmd'])
+        
 
         # there is no `match...case` in Python 3.5 :(
-        if action == '0':
-            print('stopping')
+        if command['cmd'] == 'drive':
+            print('driving on command')
+            bot.move(float(command['angular']), float(command['linear']))        
+        elif command['cmd'] == 'stop':
             bot.stop()
-        elif action == '1':
-            print('moving forwards')
-            bot.steer_on_for_seconds(0, int(speed), seconds)
-        elif action == '2':
-            print('moving backwards')
-            bot.steer_on_for_seconds(0, int(speed)*-1, seconds)
-        elif action == '3':
-            print('turning left')
-            bot.turn_degrees(int(speed), degrees*-1)
-        elif action == '4':
-            print('turning right')
-            bot.turn_degrees(int(speed), degrees)
-        elif action == 'q':
+        elif command['cmd'] == 'speak':
+            bot.sound.speak(command['text'])
+        elif command['cmd'] == 'quit':
             client.disconnect()
-            print('turning off')
             bot.turn_off()
-        elif action == 'speak':
-            bot.sound.speak('greetings from EV3')
         else:
             print('command not found')
 
