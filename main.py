@@ -84,10 +84,12 @@ if __name__ == '__main__':
         print('empty config file')
         sys.exit()
 
-    DIST_BTW_WHEELS = config['stud_num'] * config['stud_mm']
-   
     # create a robot instance
-    bot = LegoBot(config['left_motor'], config['right_motor'], DIST_BTW_WHEELS)
+    bot = LegoBot(left_motor=config['left_motor'],
+                  right_motor=config['right_motor'],
+                  wheel_distance_mm=config['wheel_separation'])
+    # time interval for the robot to move
+    dt = 1 / config['rate']
 
     # MQTT subscriber functions
     def on_connect(client, userdata, flags, rc):
@@ -122,7 +124,7 @@ if __name__ == '__main__':
         # there is no `match...case` in Python 3.5 :(
         if command['cmd'] == 'drive':
             print('driving on command')
-            bot.move(float(command['angular']), float(command['linear']))        
+            bot.move(float(command['linear']), float(command['angular']), dt)        
         elif command['cmd'] == 'stop':
             bot.stop()
         elif command['cmd'] == 'speak':
