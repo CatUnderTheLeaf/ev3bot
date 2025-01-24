@@ -7,6 +7,7 @@ import sys
 
 import logging
 import yaml
+import time
 
 from legobot import LegoBot
 from agt import AlexaGadget
@@ -119,9 +120,11 @@ if __name__ == '__main__':
         message = msg.payload.decode()
         command = yaml.safe_load(message)
         print(command)
-        # print(command['cmd'])
-        
-
+        print("-------")
+        print("time differences")
+        print(time.time() - float(command['sec']))
+        # print(time.time_ns() - int(command['nanosec']))
+        print("-------")
         # there is no `match...case` in Python 3.5 :(
         if command['cmd'] == 'drive':
             print('driving on command')

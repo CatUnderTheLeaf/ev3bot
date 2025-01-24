@@ -148,9 +148,9 @@ class LegoBot(MoveSteerDiff):
         # every linear velocity in ev3dev is in mm/s
         self.target_linear_velocity = linear*1000
         self.target_angular_velocity = angular
-        print("linear: {}, angular: {}".format(self.target_linear_velocity, self.target_angular_velocity))
+        # print("linear: {}, angular: {}".format(self.target_linear_velocity, self.target_angular_velocity))
         vl, vr = self.get_wheel_speeds()
-        print("transformed to vl: {}, vr: {}".format(vl, vr))
+        # print("transformed to vl: {}, vr: {}".format(vl, vr))
         
         # actual robot move
         # self.on_for_seconds(vl, vr, dt, False, False)
@@ -222,9 +222,9 @@ class LegoBot(MoveSteerDiff):
             w_lim = max(min(abs(self.target_angular_velocity), ((self.wheel_max_velocity - self.wheel_min_velocity)/self.wheel_distance_mm)), 0)
             
             # 2. Compute the desired curvature of the robot's motion
-            print("limited v: {}, w: {}".format(v_lim, w_lim))
+            # print("limited v: {}, w: {}".format(v_lim, w_lim))
             vl,vr = self.uni2diff(v_lim, w_lim)
-            print("transform to vl: {}, vr: {}".format(vl, vr))
+            # print("transform to vl: {}, vr: {}".format(vl, vr))
             
             # 3. Find the max and min vel_r/vel_l
             v_lr_max = max(vl, vr)
@@ -237,18 +237,18 @@ class LegoBot(MoveSteerDiff):
             elif (v_lr_min < self.wheel_min_velocity):
                 vr += self.wheel_min_velocity - v_lr_min
                 vl += self.wheel_min_velocity - v_lr_min
-            print("after shift vl: {}, vr: {}".format(vl, vr))
+            # print("after shift vl: {}, vr: {}".format(vl, vr))
             # 5. Fix signs (Always either both positive or negative)
             v_shift, w_shift = self.diff2uni(vl,vr)
             
             v = math.copysign(v_shift,self.target_linear_velocity)
             w = math.copysign(w_shift,self.target_angular_velocity)
-            print("with sign v: {}, w: {}".format(v, w))
+            # print("with sign v: {}, w: {}".format(v, w))
             limited_vl, limited_vr = self.uni2diff(v,w)
             
             
         # limited_vl,limited_vr = self.uni2diff(self.target_linear_velocity, self.target_angular_velocity)
-        print("with sign limited_vl: {}, limited_vr: {}".format(limited_vl, limited_vr))
+        # print("with sign limited_vl: {}, limited_vr: {}".format(limited_vl, limited_vr))
         vl_rpm = (limited_vl * 60) / (math.pi * self.wheel.diameter_mm)
         vr_rpm = (limited_vr * 60) / (math.pi * self.wheel.diameter_mm)
 
