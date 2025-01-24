@@ -118,12 +118,16 @@ if __name__ == '__main__':
         
         message = msg.payload.decode()
         command = yaml.safe_load(message)
-        print(command['cmd'])
+        print(command)
+        # print(command['cmd'])
         
 
         # there is no `match...case` in Python 3.5 :(
         if command['cmd'] == 'drive':
             print('driving on command')
+
+        # linear=0.7, angular=1, left_speed=97, right_speed=35
+            # wheel 43.2 mm diameter, 21 mm width
             bot.move(float(command['linear']), float(command['angular']), dt)        
         elif command['cmd'] == 'stop':
             bot.stop()

@@ -97,9 +97,13 @@ class LegoBot(MoveSteerDiff):
     
     def __init__(self, left_motor, right_motor, wheel_distance_mm):
         MoveSteerDiff.__init__(self, left_motor, right_motor, wheel_distance_mm)
-        # limits for the robot large motors
-        self.max_speed_rpm = 170
-        self.min_speed_rpm = 30
+        
+        # limits for the ev3 large motors in mm/s
+        self.wheel_max_velocity = 170*math.pi*self.wheel.diameter_mm/60 # max rpm=170, v_man = 384.5 mm/s
+        self.wheel_min_velocity = 30*math.pi*self.wheel.diameter_mm/60  # min rpm=30, v_min = 67.8 mm/s
+
+        self.target_linear_velocity = 0 # mm/s
+        self.target_angular_velocity = 0 # rad/s
         """ 
         LegoBot Class inherits all usefull stuff for differential drive
         and adds sound, LEDs
@@ -110,13 +114,13 @@ class LegoBot(MoveSteerDiff):
         self.leds.set_color("RIGHT", "BLACK")
 
         # Startup sequence
-        self.sound.play_song((('C4', 'e'), ('D4', 'e'), ('E5', 'q')))
+        # self.sound.play_song((('C4', 'e'), ('D4', 'e'), ('E5', 'q')))
         self.leds.set_color("LEFT", "GREEN")
         self.leds.set_color("RIGHT", "GREEN")
 
         print('Hello, my name is EV3!')
 
-        self.sound.speak('Hello, my name is EV3!')
+        # self.sound.speak('Hello, my name is EV3!')
 
     def turn_off(self):
         """
@@ -141,117 +145,112 @@ class LegoBot(MoveSteerDiff):
             linear (float): linear velocity, m/s
             dt (): time interval to run the motors
         """
-        print("linear: {}, angular: {}".format(linear, angular))
-        # self.steer_on(angular, linear)
-        # linear=0.7, angular=1, left_speed=97, right_speed=35
-
-        # multiply linear velocity by 1000 to convert it to mm/s
-        vl, vr = self.get_wheel_speeds(linear*1000, angular)
+        # every linear velocity in ev3dev is in mm/s
+        self.target_linear_velocity = linear*1000
+        self.target_angular_velocity = angular
+        print("linear: {}, angular: {}".format(self.target_linear_velocity, self.target_angular_velocity))
+        vl, vr = self.get_wheel_speeds()
+        print("transformed to vl: {}, vr: {}".format(vl, vr))
         
         # actual robot move
-        self.on_for_seconds(vl, vr, dt, False, False)
+        # self.on_for_seconds(vl, vr, dt, False, False)
+        self.on(vl, vr)
     
-    def get_wheel_speeds(self, linear, angular):
+    def diff2uni(self, vl, vr):
+        """
+        Calculate the linear and angular velocity of the robot
+        based on the speed of the left and right wheels
+        
+        Args:
+            vl (int): speed of the left wheel in mm/s
+            vr (int): speed of the right wheel in mm/s
+        """
+
+        v = (vl+vr) / 2
+        w = (vr-vl) / self.wheel_distance_mm
+        return v, w
+
+    def uni2diff(self, v, w):
         """
         Calculate the speed of the left and right wheels
         based on the linear and angular velocity
 
         Args:
-            angular (float): angular velocity in rad/s
-            linear (float): linear velocity, mm/s
+            v (float): linear velocity, mm/s
+            w (float): angular velocity in rad/s
         """
-        # calculate the linear velocity of the left and right wheels
-        vl = linear - angular * self.wheel_distance_mm / 2
-        vr = linear + angular * self.wheel_distance_mm / 2
+        vl = v - w * self.wheel_distance_mm / 2
+        vr = v + w * self.wheel_distance_mm / 2
+        return vl, vr
 
-        vl_rpm = (vl * 60) / (math.pi * self.wheel.diameter_mm)
-        vr_rpm = (vr * 60) / (math.pi * self.wheel.diameter_mm)
+    def get_wheel_speeds(self):
+        """ 
+            The robot's motors have a maximum angular velocity, and the motors stall at low speeds. 
+            Suppose that we pick a linear velocity v that requires the motors to spin at 90% power. 
+            Then, we want to change ω from 0 to some value that requires 20% more power from the right motor, 
+            and 20% less power from the left motor. This is not an issue for the left motor, 
+            but the right motor cannot turn at a capacity greater than 100%. 
+            The results is that the robot cannot turn with the ω specified by our controller.
 
-        vl_limited  = self.ensure_wheel_rpm(vl_rpm)
-        vr_limited = self.ensure_wheel_rpm(vr_rpm)
-
-        return (SpeedRPM(vl_limited), SpeedRPM(vr_limited))
-    
-    def ensure_wheel_rpm(self, speed):
-        """
-        Ensure the wheel speed is within the limits
-
-        Args:
-            speed (int): the speed to be checked
-        """
-        # TODO rewrite it
-        return max(-self.max_speed_rpm, min(self.max_speed_rpm, speed))
-    
-# from sim i am
-    # def ensure_w(self,v_lr):        
-    #     """ 
-    #         The robot’s motors have a maximum angular velocity, and the motors stall at low speeds. 
-    #         Suppose that we pick a linear velocity v that requires the motors to spin at 90% power. 
-    #         Then, we want to change ω from 0 to some value that requires 20% more power from the right motor, 
-    #         and 20% less power from the left motor. This is not an issue for the left motor, 
-    #         but the right motor cannot turn at a capacity greater than 100%. 
-    #         The results is that the robot cannot turn with the ω specified by our controller.
-
-    #         Since PID controllers focus more on steering than on controlling the linear velocity, 
-    #         we want to prioritize ω over v in situations, where we cannot satisfy ω with the motors. 
-    #         In fact, we will simply reduce v until we have sufficient headroom to achieve ω with the robot. 
-    #         The function is designed to ensure that ω is achieved even if the original combination of v and ω exceeds the maximum vl and vr.
-    #     """     
-    #     # This code is taken directly from Sim.I.Am project
-    #     v_max = self.robot.wheels.max_velocity
-    #     v_min = self.robot.wheels.min_velocity
-       
-    #     R = self.robot.wheels.radius 
-    #     L = self.robot.wheels.base_length 
+            Since PID controllers focus more on steering than on controlling the linear velocity, 
+            we want to prioritize ω over v in situations, where we cannot satisfy ω with the motors. 
+            In fact, we will simply reduce v until we have sufficient headroom to achieve ω with the robot. 
+            The function is designed to ensure that ω is achieved even if the original combination of v and ω exceeds the maximum vl and vr.
+        """     
+        # This code is taken directly from Sim.I.Am project
+        # and remade to adjust to the new variables
         
-    #     def diff2uni(vl,vr):
-    #         return (vl+vr) * R/2, (vr-vl) * R/L
-        
-    #     v, w = diff2uni(*v_lr)
-        
-    #     if v == 0:
+        if self.target_linear_velocity == 0:
             
-    #         # Robot is stationary, so we can either not rotate, or
-    #         # rotate with some minimum/maximum angular velocity
+            # Robot is stationary, so we can either not rotate, or
+            # rotate with some minimum/maximum angular velocity
 
-    #         w_min = R/L*(2*v_min)
-    #         w_max = R/L*(2*v_max)
+            w_min = (2*self.wheel_min_velocity)/self.wheel_distance_mm
+            w_max = (2*self.wheel_max_velocity)/self.wheel_distance_mm
             
-    #         if abs(w) > w_min:
-    #             w = copysign(max(min(abs(w), w_max), w_min), w)
-    #         else:
-    #             w = 0
+            if abs(self.target_angular_velocity) > w_min:
+                w = math.copysign(max(min(abs(self.target_angular_velocity), w_max), w_min), self.target_angular_velocity)
+            else:
+                w = 0
             
-    #         return self.uni2diff((0,w))
+            limited_vl, limited_vr = self.uni2diff(0,w)
             
-    #     else:
-    #         # 1. Limit v,w to be possible in the range [vel_min, vel_max]
-    #         # (avoid stalling or exceeding motor limits)
-    #         v_lim = max(min(abs(v), (R/2)*(2*v_max)), (R/2)*(2*v_min))
-    #         w_lim = max(min(abs(w), (R/L)*(v_max - v_min)), 0)
+        else:
+            # 1. Limit v,w to be possible in the range [vel_min, vel_max]
+            # (avoid stalling or exceeding motor limits)
+            v_lim = max(min(abs(self.target_linear_velocity), self.wheel_max_velocity), self.wheel_min_velocity)
+            w_lim = max(min(abs(self.target_angular_velocity), ((self.wheel_max_velocity - self.wheel_min_velocity)/self.wheel_distance_mm)), 0)
             
-    #         # 2. Compute the desired curvature of the robot's motion
+            # 2. Compute the desired curvature of the robot's motion
+            print("limited v: {}, w: {}".format(v_lim, w_lim))
+            vl,vr = self.uni2diff(v_lim, w_lim)
+            print("transform to vl: {}, vr: {}".format(vl, vr))
             
-    #         vl,vr = self.uni2diff((v_lim, w_lim))
+            # 3. Find the max and min vel_r/vel_l
+            v_lr_max = max(vl, vr)
+            v_lr_min = min(vl, vr)
             
-    #         # 3. Find the max and min vel_r/vel_l
-    #         v_lr_max = max(vl, vr)
-    #         v_lr_min = min(vl, vr)
+            # 4. Shift vr and vl if they exceed max/min vel
+            if (v_lr_max > self.wheel_max_velocity):
+                vr -= v_lr_max - self.wheel_max_velocity
+                vl -= v_lr_max - self.wheel_max_velocity
+            elif (v_lr_min < self.wheel_min_velocity):
+                vr += self.wheel_min_velocity - v_lr_min
+                vl += self.wheel_min_velocity - v_lr_min
+            print("after shift vl: {}, vr: {}".format(vl, vr))
+            # 5. Fix signs (Always either both positive or negative)
+            v_shift, w_shift = self.diff2uni(vl,vr)
             
-    #         # 4. Shift vr and vl if they exceed max/min vel
-    #         if (v_lr_max > v_max):
-    #             vr -= v_lr_max - v_max
-    #             vl -= v_lr_max - v_max
-    #         elif (v_lr_min < v_min):
-    #             vr += v_min - v_lr_min
-    #             vl += v_min - v_lr_min
+            v = math.copysign(v_shift,self.target_linear_velocity)
+            w = math.copysign(w_shift,self.target_angular_velocity)
+            print("with sign v: {}, w: {}".format(v, w))
+            limited_vl, limited_vr = self.uni2diff(v,w)
             
-    #         # 5. Fix signs (Always either both positive or negative)
-    #         v_shift, w_shift = diff2uni(vl,vr)
             
-    #         v = copysign(v_shift,v)
-    #         w = copysign(w_shift,w)
-            
-    #         return self.uni2diff((v,w))
+        # limited_vl,limited_vr = self.uni2diff(self.target_linear_velocity, self.target_angular_velocity)
+        print("with sign limited_vl: {}, limited_vr: {}".format(limited_vl, limited_vr))
+        vl_rpm = (limited_vl * 60) / (math.pi * self.wheel.diameter_mm)
+        vr_rpm = (limited_vr * 60) / (math.pi * self.wheel.diameter_mm)
 
-    # wheel 43.2 mm diameter, 21 mm width
+        # return velocities as SpeedValue objects
+        return (SpeedRPM(vl_rpm), SpeedRPM(vr_rpm))

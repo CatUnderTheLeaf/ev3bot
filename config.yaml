@@ -2,14 +2,20 @@
 left_motor: 'outA'
 right_motor: 'outD'
 # size of the stud
-stud_mm: 8
+# stud_mm: 8
 # number of studs
-stud_num: 13
+# stud_num: 13
 
 # mqtt
 broker_ip: '10.42.1.2'
 port: 1883
 keep_alive: 60
-
 # mqtt topics
 legobot_cmd: 'legobot_cmd/primitive'
+
+# differential drive
+# distance between the wheels in mm
+wheel_separation: 104
+# update rate of messages in Hz
+# should be equal to ros cmd_vel topic hz
+rate: 10
