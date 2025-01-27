@@ -71,82 +71,90 @@ if __name__ == '__main__':
      
     # set large letters on ev3 display
     os.system('setfont Lat15-TerminusBold14')
-    
+    client = mqtt.Client()
+        
     # load configuration
     try:
         with open("config.yaml", mode="r") as f:
             config = yaml.safe_load(f)
+
+        if config is None:
+            print('empty config file')
+            sys.exit()
+
+        # create a robot instance
+        bot = LegoBot(left_motor=config['left_motor'],
+                    right_motor=config['right_motor'],
+                    wheel_distance_mm=config['wheel_separation'])
+        
+        # MQTT subscriber functions
+        def on_connect(client, userdata, flags, rc):
+            """
+            connect to the MQTT client and subscribe to a topic
+
+            Args:
+                client (Client) - the client instance for this callback
+                userdata - the private user data
+                connect_flags (ConnectFlags) - the flags for this connection
+                reason_code (ReasonCode) - the connection reason code received from the broken
+            """
+            print("Connected with result code "+str(rc))
+            client.subscribe(config['legobot_cmd'])
+
+        def on_message(client, userdata, msg):
+            """
+            recieve `legobot_cmd` message and 
+            move the robot accordingly
+
+            Args:
+                client (Client) - the client instance for this callback
+                userdata - the private user data
+                msg (MQTTMessage) - the received message
+            """
+            
+            message = msg.payload.decode()
+            command = yaml.safe_load(message)
+            print(command)
+            print("-------")
+            print("time differences")
+            print(time.time() - float(command['sec']))
+            # print(time.time_ns() - int(command['nanosec']))
+            print("-------")
+            # there is no `match...case` in Python 3.5 :(
+            if command['cmd'] == 'drive':
+                print('driving on command')
+                bot.move(float(command['linear']), float(command['angular']))        
+            elif command['cmd'] == 'stop':
+                bot.stop()
+            elif command['cmd'] == 'speak':
+                bot.sound.speak(command['text'])
+            elif command['cmd'] == 'quit':
+                client.disconnect()
+                bot.turn_off()
+            else:
+                print('command not found')
+
+        # create and run MQTT client to receive messages
+        client.connect(config['broker_ip'], config['port'], config['keep_alive'])
+
+        client.on_connect = on_connect
+        client.on_message = on_message
+
+        client.loop_start()
+
+        # time interval for publishing odometry
+        dt = 1 / config['rate']
+        while True:
+            #code for publishing
+            client.publish(config['legobot_odom'], bot.get_odometry())
+            time.sleep(dt)
+
     except OSError as error:
         print(strerror(error.errno))
     except yaml.YAMLError as exc:
         print(exc)
 
-    if config is None:
-        print('empty config file')
-        sys.exit()
+    finally:
+        client.loop_stop()
 
-    # create a robot instance
-    bot = LegoBot(left_motor=config['left_motor'],
-                  right_motor=config['right_motor'],
-                  wheel_distance_mm=config['wheel_separation'])
-    # time interval for the robot to move
-    dt = 1 / config['rate']
-
-    # MQTT subscriber functions
-    def on_connect(client, userdata, flags, rc):
-        """
-        connect to the MQTT client and subscribe to a topic
-
-        Args:
-            client (Client) - the client instance for this callback
-            userdata - the private user data
-            connect_flags (ConnectFlags) - the flags for this connection
-            reason_code (ReasonCode) - the connection reason code received from the broken
-        """
-        print("Connected with result code "+str(rc))
-        client.subscribe(config['legobot_cmd'])
-
-    def on_message(client, userdata, msg):
-        """
-        recieve `legobot_cmd` message and 
-        move the robot accordingly
-
-        Args:
-            client (Client) - the client instance for this callback
-            userdata - the private user data
-            msg (MQTTMessage) - the received message
-        """
-        
-        message = msg.payload.decode()
-        command = yaml.safe_load(message)
-        print(command)
-        print("-------")
-        print("time differences")
-        print(time.time() - float(command['sec']))
-        # print(time.time_ns() - int(command['nanosec']))
-        print("-------")
-        # there is no `match...case` in Python 3.5 :(
-        if command['cmd'] == 'drive':
-            print('driving on command')
-
-        # linear=0.7, angular=1, left_speed=97, right_speed=35
-            # wheel 43.2 mm diameter, 21 mm width
-            bot.move(float(command['linear']), float(command['angular']), dt)        
-        elif command['cmd'] == 'stop':
-            bot.stop()
-        elif command['cmd'] == 'speak':
-            bot.sound.speak(command['text'])
-        elif command['cmd'] == 'quit':
-            client.disconnect()
-            bot.turn_off()
-        else:
-            print('command not found')
-
-    # create and run MQTT client to receive messages
-    client = mqtt.Client()
-    client.connect(config['broker_ip'], config['port'], config['keep_alive'])
-
-    client.on_connect = on_connect
-    client.on_message = on_message
-
-    client.loop_forever()
+    

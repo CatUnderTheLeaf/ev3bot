@@ -12,6 +12,7 @@ port: 1883
 keep_alive: 60
 # mqtt topics
 legobot_cmd: 'legobot_cmd/primitive'
+legobot_odom: 'legobot_odom/primitive'
 
 # differential drive
 # distance between the wheels in mm
