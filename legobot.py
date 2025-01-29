@@ -8,6 +8,8 @@ from ev3dev2.led import Leds
 import math
 import time
 
+import _thread
+
 # class MoveSteerDiff(MoveDifferential):
 #     """
 #     A combination of MoveDifferential and MoveSteering clasess
@@ -99,7 +101,7 @@ class LegoBot(MoveDifferential):
     def __init__(self, left_motor, right_motor, wheel_distance_mm):
         # MoveSteerDiff.__init__(self, left_motor, right_motor, wheel_distance_mm)
         MoveDifferential.__init__(self, left_motor, right_motor, EV3Tire, wheel_distance_mm)
-        
+                
         # limits for the ev3 large motors in mm/s
         self.wheel_max_velocity = 170*math.pi*self.wheel.diameter_mm/60 # max rpm=170, v_man = 384.5 mm/s
         self.wheel_min_velocity = 30*math.pi*self.wheel.diameter_mm/60  # min rpm=30, v_min = 67.8 mm/s
@@ -108,6 +110,10 @@ class LegoBot(MoveDifferential):
         self.target_angular_velocity = 0 # rad/s
         self.cur_linear_velocity = 0 # mm/s
         self.cur_angular_velocity = 0 # rad/s
+        self.left_wheel_pos = 0.0 #rad
+        self.right_wheel_pos = 0.0 #rad
+        self.left_wheel_vel = 0.0 #rad/s
+        self.right_wheel_vel = 0.0 #rad/s
 
         self.odometry_start(theta_degrees_start=0.0, x_pos_start=0.0, y_pos_start=0.0, sleep_time=0.005)
         """ 
@@ -269,16 +275,101 @@ class LegoBot(MoveDifferential):
         # return velocities as SpeedValue objects
         return (SpeedRPM(vl_rpm), SpeedRPM(vr_rpm))
     
+    def odometry_start(self, theta_degrees_start=90.0, x_pos_start=0.0, y_pos_start=0.0, sleep_time=0.005):  # 5ms
+        """
+        Ported from:
+        http://seattlerobotics.org/encoder/200610/Article3/IMU%20Odometry,%20by%20David%20Anderson.htm
+
+        A thread is started that will run until the user calls odometry_stop()
+        which will set odometry_thread_run to False
+
+        I had to add wheel velocities and positions 
+        to send it in the odometry message for joint_states_publisher
+        """
+        print(self.odometry_thread_run)
+        def _odometry_monitor():
+            left_previous = 0
+            right_previous = 0
+            self.theta = math.radians(theta_degrees_start)  # robot heading
+            self.x_pos_mm = x_pos_start  # robot X position in mm
+            self.y_pos_mm = y_pos_start  # robot Y position in mm
+            TWO_PI = 2 * math.pi
+            self.odometry_thread_run = True
+
+            while self.odometry_thread_run:
+
+                # sample the left and right encoder counts as close together
+                # in time as possible
+                left_current = self.left_motor.position
+                right_current = self.right_motor.position
+                # added for joint-states publlisher
+                self.left_wheel_pos = left_current*math.pi/180
+                self.right_wheel_pos = right_current*math.pi/180
+                self.left_wheel_vel = self.left_motor.speed / self.left_motor.count_per_rot * 2 * math.pi
+                self.right_wheel_vel = self.right_motor.speed / self.right_motor.count_per_rot * 2 * math.pi
+
+
+                # determine how many ticks since our last sampling
+                left_ticks = left_current - left_previous
+                right_ticks = right_current - right_previous
+
+                # Have we moved?
+                if not left_ticks and not right_ticks:
+                    if sleep_time:
+                        time.sleep(sleep_time)
+                    continue
+
+                # update _previous for next time
+                left_previous = left_current
+                right_previous = right_current
+
+                # rotations = distance_mm/self.wheel.circumference_mm
+                left_rotations = float(left_ticks / self.left_motor.count_per_rot)
+                right_rotations = float(right_ticks / self.right_motor.count_per_rot)
+
+                # convert longs to floats and ticks to mm
+                left_mm = float(left_rotations * self.wheel.circumference_mm)
+                right_mm = float(right_rotations * self.wheel.circumference_mm)
+
+                # calculate distance we have traveled since last sampling
+                mm = (left_mm + right_mm) / 2.0
+
+                # accumulate total rotation around our center
+                self.theta += (right_mm - left_mm) / self.wheel_distance_mm
+
+                # and clip the rotation to plus or minus 360 degrees
+                self.theta -= float(int(self.theta / TWO_PI) * TWO_PI)
+
+                # now calculate and accumulate our position in mm
+                self.x_pos_mm += mm * math.cos(self.theta)
+                self.y_pos_mm += mm * math.sin(self.theta)
+
+                if sleep_time:
+                    time.sleep(sleep_time)
+
+        _thread.start_new_thread(_odometry_monitor, ())
+
+        # Block until the thread has started doing work
+        while not self.odometry_thread_run:
+            pass
+
     def get_odometry(self):
         """
         Get the current odometry data as yaml string
         """
+        
         odometry = [
+            # for odometry and tf2
             'time: {}'.format(time.time()),
             'linear: {}'.format(self.cur_linear_velocity / 1000), # convert to m/s
             'angular: {}'.format(self.cur_angular_velocity),
             'x: {}'.format(self.x_pos_mm / 1000),   # convert to meters
             'y: {}'.format(self.y_pos_mm / 1000),   # convert to meters
-            'heading: {}'.format(self.theta) # in radians
+            'heading: {}'.format(self.theta), # in radians
+            # for joint_states_publisher
+            'left_wheel: {}'.format(self.left_wheel_pos), # radians
+            'right_wheel: {}'.format(self.right_wheel_pos), # radians
+            'left_wheel_vel: {}'.format(self.left_wheel_vel), # radians/s
+            'right_wheel_vel: {}'.format(self.right_wheel_vel), # radians/s
         ]
         return '\n'.join(odometry)
